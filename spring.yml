@@ -18,61 +18,71 @@ spec:
         - name: springboot
           containerPort: 8080      
 ---
-# Node Port Service
 apiVersion: v1
-kind: Service
+kind: ConfigMap
 metadata:
-  labels:
-    name: springboot
-  name: springboot
-spec:
-  type: NodePort
-  ports:
-    - port: 8080
-      targetPort: 8080
-  selector:
-    name: springboot
+  name: postgres-config
+  namespace: default
+data:
+  postgres_user: admin
+  postgres_password: c1oudc0w
 ---
-# Mongo host path rc
 apiVersion: v1
-kind: ReplicationController
+kind: PersistentVolumeClaim
 metadata:
-  labels:
-    name: mongo
-  name: mongo-controller
+  name: postgres-pv-claim
 spec:
-  replicas: 1
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 32Gi
+---
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: postgres
+spec:
   template:
     metadata:
       labels:
-        name: mongo
+        app: postgres
     spec:
-      containers:
-      - image: mongo
-        name: mongo
-        ports:
-        - name: mongo
-          containerPort: 27017
-          hostPort: 27017
-        volumeMounts:
-        - name: mongo-persistent-storage
-          mountPath: /data/db
       volumes:
-      - name: mongo-persistent-storage
-        hostPath:
-         path: /tmp/dbbackup
+        - name: postgres-storage
+          persistentVolumeClaim:
+            claimName: postgres-pv-claim
+      containers:
+        - image: postgres
+          name: postgres
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: postgres-config
+                  key: postgres_user
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                configMapKeyRef:
+                  name: postgres-config
+                  key: postgres_password
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          ports:
+            - containerPort: 5432
+              name: postgres
+          volumeMounts:
+            - name: postgres-storage
+              mountPath: /var/lib/postgresql/data
 ---
-# Mongo Node Port RC
 apiVersion: v1
 kind: Service
 metadata:
-  labels:
-    name: mongo
-  name: mongo
+  name: postgres
 spec:
   type: ClusterIP
   ports:
-    - port: 27017
-      targetPort: 27017
+    - port: 5432
   selector:
-    name: mongo
+    app: postgres
+---
